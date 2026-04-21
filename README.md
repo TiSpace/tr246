@@ -1,4 +1,5 @@
 # Info
+![Board](./documents/tr246-R01.png)
 Beschreibung der zugehörigen Klassen unter 
 [tr246_dokumentation.md](./tr246_dokumentation.md)
 
