@@ -20,9 +20,10 @@ void runCommunication() {
                 {
                     // Show the current pause value and request a new one
                     Serial.print(F("Pause between measurements: "));
-                    Serial.print(board.getMeasurementPause());
+                    Serial.print(board.MeasurementPause());
                     Serial.print(F(" ms  New value? "));
-                    board.setMeasurementPause(readIntegerFromSerial()) ;
+                    //board.setMeasurementPause(readIntegerFromSerial()) ;
+                    board.MeasurementPause(readIntegerFromSerial()) ;
                     Serial.print("\n");
 
                  
