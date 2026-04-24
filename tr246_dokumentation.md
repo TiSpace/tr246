@@ -1,7 +1,7 @@
 # tr246 – Bibliotheks-Dokumentation
 
 Dokumentation der `tr246`-Klasse für das Arduino-Board **tr246**.  
-Die Bibliothek steuert die On-Board-Peripherie: RGB-LED, WS2812-Streifen, Taster, ENS21x-Digitalsensor, analoger RHT1-Sensor, OLED-Display sowie EEPROM-gestützte Einstellungen.
+Die Bibliothek steuert die On-Board-Peripherie: RGB-LED, WS2812-Streifen, Taster, ENS21x-Digitalsensor, analoger RHT1-Sensor, OLED-Display, Power-Switch sowie EEPROM-gestützte Einstellungen.
 
 ---
 
@@ -13,12 +13,13 @@ Die Bibliothek steuert die On-Board-Peripherie: RGB-LED, WS2812-Streifen, Taster
 4. [WS2812 Adressierbare LEDs](#4-ws2812-adressierbare-leds)
 5. [Taster (Polling)](#5-taster-polling)
 6. [Taster (Interrupt-gesteuert)](#6-taster-interrupt-gesteuert)
-7. [ENS21x Digitaler Temperatur-/Feuchtigkeitssensor](#7-ens21x-digitaler-temperatur-feuchtigkeitssensor)
-8. [RHT1 Analoger Temperatur-/Feuchtigkeitssensor](#8-rht1-analoger-temperatur-feuchtigkeitssensor)
-9. [OLED-Display](#9-oled-display)
-10. [Messpause (EEPROM-gespeichert)](#10-messpause-eeprom-gespeichert)
-11. [Hilfsfunktionen (global)](#11-hilfsfunktionen-global)
-12. [Pin-Belegung & Konstanten](#12-pin-belegung--konstanten)
+7. [Power-Switch](#7-power-switch)
+8. [ENS21x Digitaler Temperatur-/Feuchtigkeitssensor](#8-ens21x-digitaler-temperatur-feuchtigkeitssensor)
+9. [RHT1 Analoger Temperatur-/Feuchtigkeitssensor](#9-rht1-analoger-temperatur-feuchtigkeitssensor)
+10. [OLED-Display](#10-oled-display)
+11. [Messpause (EEPROM-gespeichert)](#11-messpause-eeprom-gespeichert)
+12. [Hilfsfunktionen (global)](#12-hilfsfunktionen-global)
+13. [Pin-Belegung & Konstanten](#13-pin-belegung--konstanten)
 
 ---
 
@@ -43,10 +44,10 @@ Initialisiert die gesamte On-Board-Peripherie in dieser festen Reihenfolge:
 | Schritt | Was passiert |
 |---------|--------------|
 | 1. GPIO | LED-Pins als Ausgang, Taster als Eingang mit Pull-up, `PIN_PWR_SW` HIGH |
-| 2. I2C | Bus wird gestartet |
+| 2. I2C | Bus wird gestartet, diskrete LED auf `OFF` gesetzt |
 | 3. Interrupts | Pin-Change-Interrupts für D4–D6 (Taster) werden aktiviert |
 | 4. WS2812 | FastLED registriert den Streifen, Helligkeit = 50, alle LEDs aus |
-| 5. OLED | Display-Start, zeigt 800 ms lang Compile-Zeit/-Datum |
+| 5. OLED | Display-Start, zeigt 800 ms lang Compile-Zeit/-Datum, danach „Arduino tr246" |
 | 6. ENS21x | Dauermessmodus wird gestartet |
 | 7. ADC | Referenzspannung wird auf `EXTERNAL` (3,3 V am AREF-Pin) umgestellt |
 | 8. RHT1 | Versorgungsspannung 3,3 V wird intern gespeichert |
@@ -90,17 +91,19 @@ Bitmuster: **bit 2 = GREEN | bit 1 = RED | bit 0 = BLUE**
 
 Wird von `handleButtonInterrupt()` aktualisiert und kann im Sketch ausgelesen werden.
 
-| Feld        | Typ       | Beschreibung |
-|-------------|-----------|--------------|
-| `pressed`   | `boolean` | `false` = gedrückt (active-low), `true` = losgelassen |
-| `changed`   | `boolean` | `true` für genau einen ISR-Durchlauf nach einem Zustandswechsel |
-| `pressTime` | `float`   | Zeitstempel des letzten akzeptierten Flankenwechsels in ms |
+| Feld        | Typ       | Initialisierung | Beschreibung |
+|-------------|-----------|-----------------|--------------|
+| `pressed`   | `boolean` | `true`          | Aktueller Pegelzustand: `false` = gedrückt (active-low: LOW-Pegel), `true` = losgelassen (HIGH-Pegel) |
+| `changed`   | `boolean` | `false`         | `true` für genau einen ISR-Durchlauf nach einem akzeptierten Flankenwechsel |
+| `pressTime` | `float`   | `0`             | Zeitstempel des letzten akzeptierten Flankenwechsels in ms |
 
 ```cpp
 if (!board.buttonA_Status.pressed && board.buttonA_Status.changed) {
-    // Taster A wurde soeben gedrückt
+    // Taster A wurde soeben gedrückt (fallende Flanke akzeptiert)
 }
 ```
+
+> **Hinweis:** Da die Taster active-low sind, entspricht `pressed == false` dem physisch gedrückten Zustand.
 
 ---
 
@@ -126,14 +129,14 @@ board.LED(OFF);      // Ausschalten
 
 ---
 
-### `void flashLED(colourLED LED_colour, uint8_t _duration)`
+### `void flashLED(colourLED LED_colour, uint16_t _duration)`
 
 Schaltet die LED für eine definierte Zeit ein und danach wieder aus. **Blockierend.**
 
-| Parameter    | Typ         | Beschreibung                         |
-|--------------|-------------|--------------------------------------|
-| `LED_colour` | `colourLED` | Farbe des Blitzes                    |
-| `_duration`  | `uint8_t`   | Leuchtdauer in Millisekunden (0–255) |
+| Parameter    | Typ         | Beschreibung                              |
+|--------------|-------------|-------------------------------------------|
+| `LED_colour` | `colourLED` | Farbe des Blitzes                         |
+| `_duration`  | `uint16_t`  | Leuchtdauer in Millisekunden (0–65535)    |
 
 ```cpp
 board.flashLED(RED, 100);   // 100 ms rot aufleuchten
@@ -269,6 +272,8 @@ Für nicht-blockierende Anwendungen können die Taster per Pin-Change-Interrupt 
 
 Muss aus der ISR (`ISR(PCINT2_vect)`) aufgerufen werden. Aktualisiert die drei öffentlichen `buttonX_Status`-Strukturen mit Debouncing (Fenster: 80 ms = `debounceTime`).
 
+Für jeden Taster gilt: Weicht der aktuelle Hardware-Pegel vom zuletzt gespeicherten Zustand ab **und** ist das Debounce-Fenster abgelaufen, wird die Flanke akzeptiert (`changed = true`, `pressed` und `pressTime` werden aktualisiert). Stimmen Pegel und Zustand überein, wird `changed` auf `false` zurückgesetzt — so ist `changed` immer nur genau einen ISR-Durchlauf lang gesetzt.
+
 ```cpp
 tr246 board;
 
@@ -296,7 +301,44 @@ Felder jeder Struktur: siehe Abschnitt [2 – buttonStatus](#buttonstatus--zusta
 
 ---
 
-## 7. ENS21x Digitaler Temperatur-/Feuchtigkeitssensor
+## 7. Power-Switch
+
+Der Power-Switch-Ausgang (`PIN_PWR_SW`, D8) hält die Board-Versorgung aufrecht. `init()` setzt ihn automatisch auf HIGH.
+
+---
+
+### `bool powerSwitch()`
+
+Liest den aktuellen Zustand des Power-Switch-Ausgangs vom Pin und gibt ihn zurück.
+
+**Rückgabe:** `true` wenn der Ausgang HIGH ist (Versorgung an), `false` wenn LOW.
+
+```cpp
+bool state = board.powerSwitch();
+```
+
+---
+
+### `bool powerSwitch(bool state)`
+
+Setzt den Power-Switch-Ausgang auf den gewünschten Zustand und speichert ihn intern.
+
+| Parameter | Typ    | Beschreibung                             |
+|-----------|--------|------------------------------------------|
+| `state`   | `bool` | `true` = an (HIGH), `false` = aus (LOW)  |
+
+**Rückgabe:** Der tatsächlich angelegte Zustand.
+
+```cpp
+board.powerSwitch(true);   // Versorgung einschalten
+board.powerSwitch(false);  // Versorgung ausschalten
+```
+
+> **Hinweis:** Das Setzen von `false` schaltet die Board-Versorgung ab — der Sketch läuft danach nicht mehr weiter.
+
+---
+
+## 8. ENS21x Digitaler Temperatur-/Feuchtigkeitssensor
 
 Der ENS21x ist fest an I2C-Adresse `0x42` verdrahtet.  
 Der Zugriff erfolgt über das öffentliche Member-Objekt `board.ENS21x`.  
@@ -348,11 +390,13 @@ if (!isnan(rh)) {
 
 ---
 
-## 8. RHT1 Analoger Temperatur-/Feuchtigkeitssensor
+## 9. RHT1 Analoger Temperatur-/Feuchtigkeitssensor
 
 Externer analoger Sensor, angeschlossen an `A6` (Feuchte) und `A7` (Temperatur).  
 Der ADC arbeitet gegen eine externe 3,3-V-Referenz am AREF-Pin — wird von `init()` automatisch konfiguriert.  
 Der Zugriff erfolgt über das öffentliche Member-Objekt `board.RHT1`.
+
+Da die ADC-Messung ratiometrisch erfolgt (VDD-Terme kürzen sich heraus), sind die Umrechnungsformeln unabhängig von der tatsächlichen Versorgungsspannung.
 
 | Kanal      | Pin | Formel |
 |------------|-----|--------|
@@ -387,11 +431,9 @@ Serial.print("RHT1 Feuchte: ");
 Serial.println(rh, 1);
 ```
 
-> **Hinweis:** Die VDD-Terme kürzen sich in der Formel heraus — das Ergebnis ist unabhängig von der tatsächlichen Versorgungsspannung, solange ADC-Referenz und Sensorversorgung dieselbe Quelle nutzen.
-
 ---
 
-## 9. OLED-Display
+## 10. OLED-Display
 
 Das Display ist ein **SSD1306 128×64** an I2C-Adresse `0x3C`.  
 Es ist als öffentliches Member direkt zugänglich:
@@ -400,7 +442,7 @@ Es ist als öffentliches Member direkt zugänglich:
 board.display   // Typ: U8X8_SSD1306_128X64_NONAME_HW_I2C
 ```
 
-`init()` initialisiert das Display und gibt kurz Compile-Datum und -Uhrzeit aus. Danach kann es frei beschrieben werden:
+`init()` initialisiert das Display und gibt kurz Compile-Datum und -Uhrzeit aus (800 ms), dann wird „Arduino tr246" angezeigt. Danach kann es frei beschrieben werden:
 
 ```cpp
 board.display.clear();
@@ -419,13 +461,15 @@ Vollständige API: [U8x8-Dokumentation](https://github.com/olikraus/u8g2/wiki/u8
 
 ---
 
-## 10. Messpause (EEPROM-gespeichert)
+## 11. Messpause (EEPROM-gespeichert)
 
 Die Messpause (Intervall zwischen Sensormessungen) wird als 16-Bit-Wert im EEPROM gespeichert (little-endian, Adressen 31–32). Beim Start lädt `init()` den gespeicherten Wert automatisch. Werte über 50 000 ms (z. B. bei frisch beschriebenem EEPROM = `0xFFFF`) werden auf 1 000 ms zurückgesetzt.
 
+Getter und Setter sind als **überladene Methoden** desselben Namens `MeasurementPause()` realisiert.
+
 ---
 
-### `uint16_t setMeasurementPause(uint16_t _pause)`
+### `uint16_t MeasurementPause(uint16_t _pause)` — Setter
 
 Setzt die Messpause und schreibt den Wert dauerhaft ins EEPROM.
 
@@ -436,19 +480,19 @@ Setzt die Messpause und schreibt den Wert dauerhaft ins EEPROM.
 **Rückgabe:** Der gespeicherte Wert (`uint16_t`)
 
 ```cpp
-board.setMeasurementPause(2000);   // Intervall auf 2 Sekunden setzen
+board.MeasurementPause(2000);   // Intervall auf 2 Sekunden setzen
 ```
 
 ---
 
-### `uint16_t getMeasurementPause()`
+### `uint16_t MeasurementPause()` — Getter
 
-Gibt die beim Start aus dem EEPROM geladene Messpause zurück.
+Gibt die aktuell im RAM gehaltene Messpause zurück (beim Start aus EEPROM geladen).
 
 **Rückgabe:** Intervall in Millisekunden (`uint16_t`)
 
 ```cpp
-uint16_t pause = board.getMeasurementPause();
+uint16_t pause = board.MeasurementPause();
 Serial.print("Messpause: ");
 Serial.print(pause);
 Serial.println(" ms");
@@ -460,7 +504,7 @@ Serial.println(" ms");
 unsigned long lastMeasurement = 0;
 
 void loop() {
-    if (millis() - lastMeasurement >= board.getMeasurementPause()) {
+    if (millis() - lastMeasurement >= board.MeasurementPause()) {
         lastMeasurement = millis();
         // Messung durchführen …
     }
@@ -469,7 +513,7 @@ void loop() {
 
 ---
 
-## 11. Hilfsfunktionen (global)
+## 12. Hilfsfunktionen (global)
 
 Diese Funktionen sind **nicht Teil der Klasse** und stehen nach dem `#include "tr246.h"` direkt zur Verfügung.
 
@@ -477,7 +521,8 @@ Diese Funktionen sind **nicht Teil der Klasse** und stehen nach dem `#include "t
 
 ### `double computeAbsHumidity(double celsius, double humidity)`
 
-Berechnet die absolute Luftfeuchte aus Temperatur und relativer Feuchte.
+Berechnet die absolute Luftfeuchte aus Temperatur und relativer Feuchte.  
+Verwendet die Magnus-Näherung für den Sättigungsdampfdruck kombiniert mit dem idealen Gasgesetz.
 
 | Parameter  | Typ      | Beschreibung                    |
 |------------|----------|---------------------------------|
@@ -500,7 +545,7 @@ Serial.println(" g/m³");
 
 ### `double computeDewPoint2(double celsius, double humidity)`
 
-Berechnet den Taupunkt nach der Tetens-Näherungsformel (Sonntag-Variante).
+Berechnet den Taupunkt nach der **August–Roche–Magnus-Formel (Sonntag 1990)**.
 
 | Parameter  | Typ      | Beschreibung                    |
 |------------|----------|---------------------------------|
@@ -521,7 +566,7 @@ Serial.println(" °C");
 
 ---
 
-## 12. Pin-Belegung & Konstanten
+## 13. Pin-Belegung & Konstanten
 
 ### Pin-Belegung
 
