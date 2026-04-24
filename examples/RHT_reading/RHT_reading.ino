@@ -35,7 +35,7 @@ void loop() {
     runCommunication(); // Handle communication tasks (not shown)
 
     // Print sensor data at regular intervals if display is enabled
-    if (displayCont && (millis() - prevTime) > board.getMeasurementPause()) {
+    if (displayCont && (millis() - prevTime) > board.MeasurementPause()) {
         // Print time, temperature, humidity, and absolute humidity for both sensors
         Serial.print(millis() / 1000.0f ,3);
         Serial << "\t\t"  // Time in seconds
@@ -101,9 +101,9 @@ void buttonActivity() {
         board.buttonC_Status.changed = false;
         if (board.buttonC_Status.pressed) {
             board.flashLED(GREEN, 100);  // Flash green LED
-            digitalWrite(PIN_PWR_SW, !digitalRead(PIN_PWR_SW));  // Toggle power switch
+            board.powerSwitch(!board.powerSwitch());
             // Update LED: red if power is on, green if off
-            board.WS_LED(digitalRead(PIN_PWR_SW) ? 128 : 0, digitalRead(PIN_PWR_SW) ? 0 : 128, 0, 0);
+            board.WS_LED(board.powerSwitch() ? 128 : 0, board.powerSwitch() ? 0 : 128, 0, 0);
         }
     }
 }
